@@ -3,94 +3,120 @@
 #include <stdlib.h>
 #include <time.h>
 
-void generate_random_coordinates(float *matrix, int t, int N) {
-    for (int i = 0; i < t; ++i) {
-        for (int j = 0; j < N; ++j) {
-            for (int k = 0; k < 3; ++k) {
-                matrix[i * N * 3 + j * 3 + k] = ((float)rand() / RAND_MAX) * 10.0f;
-            }
-        }
+#include "xdrfile.h"
+#include "xdrfile_xtc.h"
+
+// To-do: Dynamically allocate matrix to fit number of residues
+#define MAX_RES 2000
+#define PI 3.14159265
+
+void radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float *bins, float *g_r, int num_bins) {
+    int natoms;
+    if (read_xtc_natoms((char *)xtc_file, &natoms) != 0 || natoms <= 0) {
+        fprintf(stderr, "[ Error] Failed to read number of atoms from %s\n", xtc_file);
+        return -1;
     }
-}
 
-void print_matrix(float *matrix, int t, int N) {
-    for (int i = 0; i < t; ++i) {
-        printf("Time step %d:\n", i);
-        for (int j = 0; j < N; ++j) {
-            printf("  [");
-            for (int k = 0; k < 3; ++k) {
-                printf(" %.4f", matrix[i * N * 3 + j * 3 + k]);
-            }
-            printf(" ]\n");
-        }
+    rvec *x = malloc(sizeof(rvec) * natoms);
+    if (!x) {
+        fprintf(stderr, "[ Error] Failed to allocate memory.\n");
+        return -1;
     }
-}
 
-void radial_distribution_function(float *matrix, int t, int N) {
-    float r_max = 10.0f; // Max distance to consider
-    float bin_width = 0.1f; // Width of histogram bins
-    int num_bins = (int)(r_max / bin_width);
+    XDRFILE *xdr = xdrfile_open(xtc_file, "r");
+    if (!xdr) {
+        fprintf(stderr, "[ Error ] Failed to open file: %s\n", xtc_file);
+        free(x);
+        return -1;
+    }
 
-    // Allocate and initialize histogram
+    matrix box;
+    int step;
+    float time;
+    float prec;
+    int frame_count = 0;
+
+    float com[MAX_RES][3] = {0};
+    float total_mass[MAX_RES] = {0};
+
     int *hist = calloc(num_bins, sizeof(int));
+    if (!hist) {
+        fprintf(stderr, "[ Error] Histogram memory allocation failed\n");
+        free(x);
+        xdrfile_close(xdr);
+        return -1;
+    }
 
-    // Histogram the distances
-    for (int frame = 0; frame < t; ++frame) {
-        for (int i = 0; i < N - 1; ++i) {
-            float xi = matrix[frame * N * 3 + i * 3 + 0];
-            float yi = matrix[frame * N * 3 + i * 3 + 1];
-            float zi = matrix[frame * N * 3 + i * 3 + 2];
+    int N = 0;
+
+    while (read_xtc(xdr, natoms, &step, &time, box, x, &prec) == exdrOK) {
+        memset(com, 0, sizeof(com));
+        memset(total_mass, 0, sizeof(total_mass));
+
+        for (int i = 0; i < pairs_len; i += 3) {
+            int atom_id = (int)pairs[i];
+            int res_id = (int)pairs[i + 1];
+            float mass = pairs[i + 2];
+
+            if (atom_id < 0 || atom_id >= natoms || res_id < 0 || res_id >= MAX_RES) {
+                continue;
+            }
+
+            com[res_id][0] += x[atom_id][0] * mass;
+            com[res_id][1] += x[atom_id][1] * mass;
+            com[res_id][2] += x[atom_id][2] * mass;
+            total_mass[res_id] += mass;
+
+            if (res_id + 1 > N) N = res_id + 1;
+        }
+
+        for (int r = 0; r < N; ++r) {
+            if (total_mass[r] > 0.0f) {
+                com[r][0] /= total_mass[r];
+                com[r][1] /= total_mass[r];
+                com[r][2] /= total_mass[r];
+            }
+        }
+
+        for (int i = 0; i < N; ++i) {
+            if (total_mass[i] == 0.0f) continue;
 
             for (int j = i + 1; j < N; ++j) {
-                float xj = matrix[frame * N * 3 + j * 3 + 0];
-                float yj = matrix[frame * N * 3 + j * 3 + 1];
-                float zj = matrix[frame * N * 3 + j * 3 + 2];
+                if (total_mass[j] == 0.0f) continue;
 
-                // Euclidean distance
-                float dx = xi - xj;
-                float dy = yi - yj;
-                float dz = zi - zj;
-                float r = sqrtf(dx*dx + dy*dy + dz*dz);
+                float dx = com[i][0] - com[j][0];
+                float dy = com[i][1] - com[j][1];
+                float dz = com[i][2] - com[j][2];
+                float dist = sqrtf(dx*dx + dy*dy + dz*dz);
 
-                if (r < r_max) {
-                    int bin = (int)(r / bin_width);
-                    hist[bin] += 2;  // Each pair counts for both particles
+                if (dist < num_bins * 0.1f) {
+                    int bin = (int)(dist / 0.1f);
+                    hist[bin] += 2;
                 }
             }
         }
+
+        frame_count++;
     }
 
-    // Normalize and print RDF
-    float density = (float)(N * t) / (1000.0f);  // Will need to get volume externally
-    float norm_factor = (float)(N * (N - 1) * t); // Normalization of data
+    float volume = box[0][0] * box[1][1] * box[2][2];
+    float density = (float)(N) / volume;
+    float norm_factor = (float)(N * (N - 1) / 2 * frame_count);
 
-    printf("\nRadial Distribution Function (g(r)):\n");
     for (int b = 0; b < num_bins; ++b) {
-        float r_lower = b * bin_width;
-        float r_upper = r_lower + bin_width;
+        // To-Do: Add bin widths
+        float r_lower = b * 0.01f;
+        float r_upper = r_lower + 0.01f;
         float r_mid = (r_lower + r_upper) / 2.0f;
 
-        float shell_volume = (4.0f / 3.0f) * 3.14159 * (powf(r_upper, 3) - powf(r_lower, 3));
+        float shell_volume = (4.0f / 3.0f) * PI * (powf(r_upper, 3) - powf(r_lower, 3));
         float ideal_count = density * shell_volume;
 
-        float g_r = (float)hist[b] / (norm_factor * ideal_count);
-        printf("r = %.2f, g(r) = %.4f\n", r_mid, g_r);
+        bins[b] = r_mid;
+        g_r[b] = (float)hist[b] / (norm_factor * ideal_count + 1e-6f);
     }
 
     free(hist);
-}
-
-int main() {
-    int t = 5;   // Number of frames
-    int N = 10;  // Number of atoms
-
-    float *A_h = malloc(t * N * 3 * sizeof(float));
-
-    srand((unsigned int)time(NULL));
-
-    generate_random_coordinates(A_h, t, N);
-    radial_distribution_function(A_h, t, N);
-
-    free(A_h);
-    return 0;
+    free(x);
+    xdrfile_close(xdr);
 }

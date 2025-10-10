@@ -1,0 +1,13 @@
+[workspace]
+authors = ["Troy Smith <troy.smith@uga.edu>"]
+channels = ["conda-forge"]
+name = "CUDA-C-Final-Project"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+pandas = ">=2.3.3,<3"
+numpy = ">=2.3.3,<3"
+matplotlib = ">=3.10.6,<4"

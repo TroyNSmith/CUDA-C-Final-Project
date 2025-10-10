@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-int read_xtc_file(const char *xtc_file);
+int radial_distribution(const char *xtc_file);
 
 #ifdef __cplusplus
 }

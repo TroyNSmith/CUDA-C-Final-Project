@@ -6,12 +6,14 @@ TARGET = lib/lib.so
 
 all: $(TARGET)
 
+# Rule to link object files into shared library
 $(TARGET): $(OBJ)
 	mkdir -p lib
 	$(CC) -shared -o $@ $^ -lm
 
-%.o: %.c
+# Rule to compile .c into .o
+src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) lib/*.so
+	rm -f $(OBJ) $(TARGET)
