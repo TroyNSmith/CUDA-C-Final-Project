@@ -1,9 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
 from python import wrapper, atoms
 import time
 import matplotlib.pyplot as plt
 
-gro_file = "/home/tns97255/CUDA-C-Final-Project/tests/data/test.gro"
-xtc_file = "/home/tns97255/CUDA-C-Final-Project/tests/data/test.xtc"
+gro_file = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data/test.gro"))
+xtc_file = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "data/test.xtc"))
 
 df = atoms.read_gro_file(gro_file, coords=True)
 pairs = atoms.atom_res_idx_pairs(df)
@@ -17,4 +20,4 @@ elapsed_time = end_time - start_time
 print(elapsed_time)
 
 plt.plot(bins, g_r)
-plt.savefig("/home/tns97255/CUDA-C-Final-Project/tests/python/test.png")
+plt.savefig(os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "python/test.png")))

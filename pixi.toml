@@ -2,7 +2,7 @@
 authors = ["Troy Smith <troy.smith@uga.edu>"]
 channels = ["conda-forge"]
 name = "CUDA-C-Final-Project"
-platforms = ["linux-64"]
+platforms = ["linux-64", "win-64"]
 version = "0.1.0"
 
 [tasks]
@@ -11,3 +11,5 @@ version = "0.1.0"
 pandas = ">=2.3.3,<3"
 numpy = ">=2.3.3,<3"
 matplotlib = ">=3.10.6,<4"
+make = ">=4.4.1,<5"
+gcc = ">=15.2.0,<15.3"

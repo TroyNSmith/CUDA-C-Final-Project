@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include "xdrfile.h"
@@ -10,7 +11,7 @@
 #define MAX_RES 2000
 #define PI 3.14159265
 
-void radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float *bins, float *g_r, int num_bins) {
+int radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float *bins, float *g_r, int num_bins) {
     int natoms;
     if (read_xtc_natoms((char *)xtc_file, &natoms) != 0 || natoms <= 0) {
         fprintf(stderr, "[ Error] Failed to read number of atoms from %s\n", xtc_file);
@@ -119,4 +120,5 @@ void radial_distribution(const char *xtc_file, float *pairs, int pairs_len, floa
     free(hist);
     free(x);
     xdrfile_close(xdr);
+    return 0;
 }
