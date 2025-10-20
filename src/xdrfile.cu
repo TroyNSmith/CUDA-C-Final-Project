@@ -1,3 +1,4 @@
+extern "C"  {
 /* -*- mode: c; tab-width: 4; indent-tabs-mode: t; c-basic-offset: 4 -*-
  *
  * $Id$
@@ -30,6 +31,15 @@
 /* Get HAVE_RPC_XDR_H, F77_FUNC from config.h if available */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
+#endif
+
+#ifndef _WIN32
+#define _LARGEFILE_SOURCE
+#define _FILE_OFFSET_BITS 64
+#else
+/* map POSIX names to MSVC 64-bit variants */
+#define fseeko _fseeki64
+#define ftello _ftelli64
 #endif
 
 #include <stdio.h>
@@ -2499,7 +2509,7 @@ static void xdrstdio_destroy (XDR *);
 /*
  * Ops vector for stdio type XDR
  */
-static const struct xdr_ops xdrstdio_ops =
+static const XDR::xdr_ops xdrstdio_ops =
 	{
 		xdrstdio_getlong,		/* deserialize a long int */
 		xdrstdio_putlong,		/* serialize a long int */
@@ -2520,7 +2530,7 @@ xdrstdio_create (XDR *xdrs, FILE *file, enum xdr_op op)
 {
 	xdrs->x_op = op;
 
-	xdrs->x_ops = (struct xdr_ops *) &xdrstdio_ops;
+	xdrs->x_ops = (struct XDR::xdr_ops *) &xdrstdio_ops;
 	xdrs->x_private = (char *) file;
 }
 
@@ -2612,3 +2622,4 @@ int xdr_seek(XDRFILE *xd, int64_t pos, int whence)
 
 
 #endif /* HAVE_RPC_XDR_H not defined */
+}

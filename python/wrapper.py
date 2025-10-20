@@ -1,9 +1,15 @@
 import ctypes
 import os
+import sys
 import numpy as np
 
-lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib', 'lib.so'))
-lib = ctypes.CDLL(lib_path)
+# Choose library filename by platform
+lib_name = 'lib.dll' if sys.platform.startswith('win') or os.name == 'nt' else 'lib.so'
+lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib', lib_name))
+try:
+    lib = ctypes.CDLL(lib_path)
+except OSError as e:
+    raise OSError(f"Failed to load native library at {lib_path}: {e}")
 
 lib.radial_distribution.argtypes = [
     ctypes.c_char_p,                 # .xtc file location

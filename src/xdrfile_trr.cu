@@ -1,3 +1,4 @@
+extern "C" {
 /* -*- mode: c; tab-width: 4; indent-tabs-mode: t; c-basic-offset: 4 -*-
  *
  * $Id$
@@ -413,4 +414,5 @@ int write_trr(XDRFILE *xd, int natoms, int step, float t, float lambda,
 int read_trr(XDRFILE *xd, int natoms, int *step, float *t, float *lambda,
              matrix box, rvec *x, rvec *v, rvec *f, int *has_prop) {
   return do_trn(xd, 1, step, t, lambda, box, &natoms, x, v, f, has_prop);
+}
 }

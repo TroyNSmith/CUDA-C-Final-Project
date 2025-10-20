@@ -1,3 +1,4 @@
+extern "C" {
 /* -*- Mode: python; tab-width: 4; indent-tabs-mode:nil; coding:utf-8 -*-
  * vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
  *
@@ -57,7 +58,7 @@ int read_trr_n_frames(char *fn, int *n_frames, int *est_nframes,
   *est_nframes += *est_nframes / 5;
 
   /* Allocate memory for the frame index array */
-  if ((*offsets = malloc(sizeof(int64_t) * *est_nframes)) == NULL) {
+  if ((*offsets = (int64_t*)malloc(sizeof(int64_t) * *est_nframes)) == NULL) {
     xdrfile_close(xd);
     return exdrNOMEM;
   }
@@ -77,7 +78,7 @@ int read_trr_n_frames(char *fn, int *n_frames, int *est_nframes,
     /* Check if we need to enlarge array */
     if (*n_frames == *est_nframes) {
       *est_nframes += *est_nframes / 5 + 1; // Increase in 20% stretches
-      if ((*offsets = realloc(*offsets, sizeof(int64_t) * *est_nframes)) ==
+      if ((*offsets = (int64_t*)realloc(*offsets, sizeof(int64_t) * *est_nframes)) ==
           NULL) {
         xdrfile_close(xd);
         return exdrNOMEM;
@@ -92,4 +93,5 @@ int read_trr_n_frames(char *fn, int *n_frames, int *est_nframes,
   }
   xdrfile_close(xd);
   return exdrOK;
+}
 }

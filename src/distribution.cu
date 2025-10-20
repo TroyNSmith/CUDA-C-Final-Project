@@ -7,18 +7,28 @@
 #include "xdrfile.h"
 #include "xdrfile_xtc.h"
 
+extern "C" {
+
+#ifndef EXPORT
+#ifdef _WIN32
+#define EXPORT __declspec(dllexport)
+#else
+#define EXPORT
+#endif
+#endif
+
 // To-do: Dynamically allocate matrix to fit number of residues
 #define MAX_RES 2000
 #define PI 3.14159265
 
-int radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float *bins, float *g_r, int num_bins) {
+EXPORT int radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float *bins, float *g_r, int num_bins) {
     int natoms;
     if (read_xtc_natoms((char *)xtc_file, &natoms) != 0 || natoms <= 0) {
         fprintf(stderr, "[ Error] Failed to read number of atoms from %s\n", xtc_file);
         return -1;
     }
 
-    rvec *x = malloc(sizeof(rvec) * natoms);
+    rvec *x = (rvec*)malloc(sizeof(rvec) * natoms);
     if (!x) {
         fprintf(stderr, "[ Error] Failed to allocate memory.\n");
         return -1;
@@ -40,7 +50,7 @@ int radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float
     float com[MAX_RES][3] = {0};
     float total_mass[MAX_RES] = {0};
 
-    int *hist = calloc(num_bins, sizeof(int));
+    int *hist = (int*)calloc(num_bins, sizeof(int));
     if (!hist) {
         fprintf(stderr, "[ Error] Histogram memory allocation failed\n");
         free(x);
@@ -122,4 +132,5 @@ int radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float
     free(x);
     xdrfile_close(xdr);
     return 0;
+}
 }

@@ -1,3 +1,4 @@
+extern "C" {
 /* -*- mode: c; tab-width: 4; indent-tabs-mode: t; c-basic-offset: 4 -*-
  *
  * $Id$
@@ -127,4 +128,5 @@ int write_xtc(XDRFILE *xd, int natoms, int step, float time, matrix box,
     return result;
 
   return exdrOK;
+}
 }
