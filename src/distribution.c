@@ -84,6 +84,7 @@ int radial_distribution(const char *xtc_file, float *pairs, int pairs_len, float
 
             for (int j = i + 1; j < N; ++j) {
                 if (total_mass[j] == 0.0f) continue;
+                // dx = com[i][0] - com[j][0] > a / 2, then dx = a - | dx - dy |, where a is the length of the box in x-axis
 
                 float dx = com[i][0] - com[j][0];
                 float dy = com[i][1] - com[j][1];
