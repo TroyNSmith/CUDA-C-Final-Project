@@ -26,65 +26,65 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef _xdrfile_trr_h
-#define _xdrfile_trr_h
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include "xdrfile.h"
-
-/* All functions return exdrOK if succesfull.
- * (error codes defined in xdrfile.h).
- */
-
-typedef struct /* This struct describes the order and the	*/
-    /* sizes of the structs in a trjfile, sizes are given in bytes.	*/
-    {
-  mybool bDouble; /* Double precision?                            */
-  int ir_size;    /* Backward compatibility		        */
-  int e_size;     /* Backward compatibility		        */
-  int box_size;   /* Non zero if a box is present			*/
-  int vir_size;   /* Backward compatibility		        */
-  int pres_size;  /* Backward compatibility		        */
-  int top_size;   /* Backward compatibility		        */
-  int sym_size;   /* Backward compatibility		        */
-  int x_size;     /* Non zero if coordinates are present		*/
-  int v_size;     /* Non zero if velocities are present		*/
-  int f_size;     /* Non zero if forces are present		*/
-
-  int natoms;     /* The total number of atoms			*/
-  int step;       /* Current step number				*/
-  int nre;        /* Backward compatibility		        */
-  float tf;       /* Current time					*/
-  float lambdaf;  /* Current value of lambda			*/
-  double td;      /* Current time					*/
-  double lambdad; /* Current value of lambda			*/
-} t_trnheader;
-
-/* This function returns the number of atoms in the trr file in *natoms */
-extern int read_trr_natoms(char *fn, int *natoms);
-
-/* Read one frame of an open trr file. If either of x,v,f,box are
-   NULL the arrays will be read from the file but not used.  */
-extern int read_trr(XDRFILE *xd, int natoms, int *step, float *t, float *lambda,
-                    matrix box, rvec *x, rvec *v, rvec *f, int *has_prop);
-
-/* Write a frame to trr file */
-extern int write_trr(XDRFILE *xd, int natoms, int step, float t, float lambda,
-                     matrix box, rvec *x, rvec *v, rvec *f);
-
-/* unpack header of current frame */
-extern int do_trnheader(XDRFILE *xd, mybool bRead, t_trnheader *sh);
-
-/* Flags to signal the update of pos/vel/forces */
-#define HASX 1
-#define HASV 2
-#define HASF 4
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
+ #ifndef _xdrfile_trr_h
+ #define _xdrfile_trr_h
+ 
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+ 
+ #include "xdrfile.h"
+ 
+ /* All functions return exdrOK if succesfull.
+  * (error codes defined in xdrfile.h).
+  */
+ 
+ typedef struct /* This struct describes the order and the	*/
+     /* sizes of the structs in a trjfile, sizes are given in bytes.	*/
+     {
+   mybool bDouble; /* Double precision?                            */
+   int ir_size;    /* Backward compatibility		        */
+   int e_size;     /* Backward compatibility		        */
+   int box_size;   /* Non zero if a box is present			*/
+   int vir_size;   /* Backward compatibility		        */
+   int pres_size;  /* Backward compatibility		        */
+   int top_size;   /* Backward compatibility		        */
+   int sym_size;   /* Backward compatibility		        */
+   int x_size;     /* Non zero if coordinates are present		*/
+   int v_size;     /* Non zero if velocities are present		*/
+   int f_size;     /* Non zero if forces are present		*/
+ 
+   int natoms;     /* The total number of atoms			*/
+   int step;       /* Current step number				*/
+   int nre;        /* Backward compatibility		        */
+   float tf;       /* Current time					*/
+   float lambdaf;  /* Current value of lambda			*/
+   double td;      /* Current time					*/
+   double lambdad; /* Current value of lambda			*/
+ } t_trnheader;
+ 
+ /* This function returns the number of atoms in the trr file in *natoms */
+ extern int read_trr_natoms(char *fn, int *natoms);
+ 
+ /* Read one frame of an open trr file. If either of x,v,f,box are
+    NULL the arrays will be read from the file but not used.  */
+ extern int read_trr(XDRFILE *xd, int natoms, int *step, float *t, float *lambda,
+                     matrix box, rvec *x, rvec *v, rvec *f, int *has_prop);
+ 
+ /* Write a frame to trr file */
+ extern int write_trr(XDRFILE *xd, int natoms, int step, float t, float lambda,
+                      matrix box, rvec *x, rvec *v, rvec *f);
+ 
+ /* unpack header of current frame */
+ extern int do_trnheader(XDRFILE *xd, mybool bRead, t_trnheader *sh);
+ 
+ /* Flags to signal the update of pos/vel/forces */
+ #define HASX 1
+ #define HASV 2
+ #define HASF 4
+ 
+ #ifdef __cplusplus
+ }
+ #endif
+ 
+ #endif

@@ -59,9 +59,9 @@ endif
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Compile .cu into .o using nvcc
-src/%.o: src/%.cu
-	$(NVCC) $(NVCCFLAGS) -c $< -o $@
+# # Compile .cu into .o using nvcc
+# src/%.o: src/%.cu
+# 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
 	$(RM_CMD)

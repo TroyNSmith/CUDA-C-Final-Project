@@ -1,3 +1,7 @@
-*.o# pixi environments
+*.o
+
+# pixi environments
 .pixi/*
 !.pixi/config.toml
+
+lib/*
