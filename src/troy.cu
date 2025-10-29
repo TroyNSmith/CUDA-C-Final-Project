@@ -46,7 +46,8 @@ EXPORT int radial_distribution_naive(
             if (dz > 0.5f * box[2]) dz = box[2] - dz;
 
             float r = sqrtf(dx*dx + dy*dy + dz*dz);
-            int bin = (int)(r / bin_width);
+                
+            int bin = (int)floorf(r / bin_width + 1e-6f);
 
             if (bin >= 0 && bin < num_bins)
                 g_r[bin] += 1.0f;

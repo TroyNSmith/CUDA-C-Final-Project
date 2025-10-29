@@ -18,6 +18,8 @@ extern "C" {
 #endif
 
 #define PI 3.14159265f
+/* Small epsilon to make bin assignment consistent near bin boundaries */
+#define EPS 1e-6f
 
 #define CUDA_CHECK(call)                                                   \
     do {                                                                   \
@@ -39,12 +41,7 @@ __global__ void radial_distrobution_kernel(float *coords_1, int n1,
         if (row >= n1 || col >= n2)
             return;
 
-        /*
-         * coords_1 is indexed by 'row' (0..n1-1) and coords_2 by 'col' (0..n2-1).
-         * The original code used the indices swapped which could cause out-of-bounds
-         * accesses. Also use atomicAdd to avoid race conditions when many threads
-         * increment the same bin.
-         */
+
         float dx = fabsf(coords_1[3*row + 0] - coords_2[3*col + 0]);
         float dy = fabsf(coords_1[3*row + 1] - coords_2[3*col + 1]);
         float dz = fabsf(coords_1[3*row + 2] - coords_2[3*col + 2]);
@@ -55,7 +52,8 @@ __global__ void radial_distrobution_kernel(float *coords_1, int n1,
         if (dz > 0.5f * box[2]) dz = box[2] - dz;
 
         float r = sqrtf(dx*dx + dy*dy + dz*dz);
-        int bin = (int)(r / bin_width);
+
+        int bin = (int)floorf(r / bin_width + 1e-6f);
 
         if (bin >= 0 && bin < num_bins)
             atomicAdd(&g_r[bin], 1.0f);
@@ -101,13 +99,13 @@ EXPORT double radial_distribution_cuda(
         d_g_r, num_bins,
         d_box, bin_width
     );
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     auto end = std::chrono::high_resolution_clock::now();   // End time
 
     std::chrono::duration<double> elapsed = end - start;    // Calculate duration
     double time = elapsed.count();
-
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
 
     CUDA_CHECK(cudaMemcpy(g_r, d_g_r, num_bins * sizeof(float), cudaMemcpyDeviceToHost));
 
