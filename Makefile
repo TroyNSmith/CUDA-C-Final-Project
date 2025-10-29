@@ -54,7 +54,7 @@ endif
 
 # platform libs (avoid -lm on Windows where MSVC linker looks for m.lib)
 ifeq ($(OS),Windows_NT)
-LIBS =
+LIBS = -llegacy_stdio_definitions
 else
 LIBS = -lm
 endif

@@ -174,3 +174,51 @@ def radial_distribution_naive_c(
 
     elapsed_time = perf_counter() - start_time
     return g_r, elapsed_time
+
+def radial_distribution_naive_cuda(
+    box: ArrayLike,
+    coords_1: ArrayLike,
+    coords_2: ArrayLike = None,
+    num_bins: int = 100,
+    r_max: float = 2.50,
+):
+    if coords_2 is None:
+        coords_2 = coords_1
+
+    coords_1 = np.asarray(coords_1, dtype=np.float32).ravel()
+    coords_2 = np.asarray(coords_2, dtype=np.float32).ravel()
+    box = np.asarray(box, dtype=np.float32).ravel()
+
+    n1 = len(coords_1) // 3
+    n2 = len(coords_2) // 3
+
+    lib.radial_distribution_cuda.argtypes = [
+        ctypes.POINTER(ctypes.c_float),  # coords_1
+        ctypes.c_int,  # n1
+        ctypes.POINTER(ctypes.c_float),  # coords_2
+        ctypes.c_int,  # n2
+        ctypes.POINTER(ctypes.c_float),  # g_r
+        ctypes.c_int,  # num_bins
+        ctypes.POINTER(ctypes.c_float),  # box
+        ctypes.c_float,  # r_max
+    ]
+    lib.radial_distribution_cuda.restype = ctypes.c_double
+
+    g_r = np.zeros(num_bins, dtype=np.float32)
+
+    start_time = perf_counter()
+
+    kernel_elapsed_time = lib.radial_distribution_cuda(
+        coords_1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        n1,
+        coords_2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        n2,
+        g_r.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        num_bins,
+        box.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        ctypes.c_float(r_max),
+    )
+
+    elapsed_time = perf_counter() - start_time
+    return g_r, elapsed_time, kernel_elapsed_time
+
