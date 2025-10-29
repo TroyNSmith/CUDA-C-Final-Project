@@ -1,10 +1,22 @@
-import numpy as np
-
+import ctypes
+import os
+import sys
 from typing import Callable
-from .coordinates import System
-from numpy.typing import ArrayLike
 
+import numpy as np
+from numpy.typing import ArrayLike
 from scipy.spatial import cKDTree
+
+from .coordinates import System
+
+lib_name = "lib.dll" if sys.platform.startswith("win") or os.name == "nt" else "lib.so"
+lib_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "lib", lib_name)
+)
+try:
+    lib = ctypes.CDLL(lib_path)
+except OSError as e:
+    raise OSError(f"Failed to load native library at {lib_path}: {e}")
 
 
 def time_average(
@@ -48,11 +60,11 @@ def time_average(
             results = frame_results
         else:
             results += frame_results
-        
+
     return results / counts
 
 
-def radial_distribution(
+def radial_distribution_py(
     pbc: ArrayLike,
     coords_1: ArrayLike,
     coords_2: ArrayLike = None,
@@ -81,18 +93,18 @@ def radial_distribution(
         current_block = coords_1[start:end]
 
         neighbors = kdt_2.query_ball_point(current_block, r=dist_cutoff)
-        
+
         for i, neighbor in enumerate(neighbors):
             if not neighbor:
                 continue
-            
+
             ref = current_block[i]
 
             displacements = abs(coords_2[neighbor] - ref)
             distances = np.linalg.norm(displacements, axis=1)
 
             if not distinct:
-                mask = neighbors > i + start # Don't double count atoms
+                mask = neighbors > i + start  # Don't double count atoms
                 if not np.any(mask):
                     continue
                 distances = distances[mask]
@@ -101,7 +113,51 @@ def radial_distribution(
             histogram += block_histogram
 
     histogram = histogram / len(coords_2)
-    histogram = histogram / (4 / 3 * np.pi * bins[1:] ** 3 - 4 / 3 * np.pi * bins[:-1] ** 3)
+    histogram = histogram / (
+        4 / 3 * np.pi * bins[1:] ** 3 - 4 / 3 * np.pi * bins[:-1] ** 3
+    )
     histogram = histogram / (len(coords_1) / np.prod(pbc))
 
     return histogram
+
+
+def radial_distribution_c(
+    box: ArrayLike,
+    coords_1: ArrayLike,
+    coords_2: ArrayLike = None,
+    num_bins: int = 100,
+    dist_cutoff: float = 2.50,
+):
+    if coords_2 is None:
+        coords_2 = coords_1
+
+    lib.radial_distribution.argtypes = [
+        ctypes.POINTER(ctypes.c_float),  # coords_1
+        ctypes.c_int,  # n1
+        ctypes.POINTER(ctypes.c_float),  # coords_2
+        ctypes.c_int,  # n2
+        ctypes.POINTER(ctypes.c_float),  # g_r
+        ctypes.c_int,  # num_bins
+        ctypes.POINTER(ctypes.c_float),  # box
+        ctypes.c_float,  # r_max
+    ]
+    lib.radial_distribution.restype = ctypes.c_int
+
+    g_r = np.zeros(num_bins, dtype=np.float32)
+
+    res = lib.radial_distribution(
+        coords_1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        len(coords_1),
+        coords_2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        len(coords_2),
+        g_r.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        num_bins,
+        box.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        ctypes.c_float(dist_cutoff),
+    )
+
+    print("Histogram:", g_r)
+
+
+if __name__ == "__main__":
+    radial_distribution_c()
