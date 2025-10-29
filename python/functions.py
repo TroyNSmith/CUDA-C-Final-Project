@@ -68,7 +68,7 @@ def time_average(
     return results / counts
 
 
-def radial_distribution_py(
+def radial_distribution_naive_py(
     box: np.ndarray,
     coords_1: np.ndarray,
     coords_2: np.ndarray,
@@ -128,12 +128,12 @@ def radial_distribution_py(
     return g_r, elapsed
 
 
-def radial_distribution_c(
+def radial_distribution_naive_c(
     box: ArrayLike,
     coords_1: ArrayLike,
     coords_2: ArrayLike = None,
     num_bins: int = 100,
-    dist_cutoff: float = 2.50,
+    r_max: float = 2.50,
 ):
     if coords_2 is None:
         coords_2 = coords_1
@@ -145,7 +145,7 @@ def radial_distribution_c(
     n1 = len(coords_1) // 3
     n2 = len(coords_2) // 3
 
-    lib.radial_distribution.argtypes = [
+    lib.radial_distribution_naive.argtypes = [
         ctypes.POINTER(ctypes.c_float),  # coords_1
         ctypes.c_int,  # n1
         ctypes.POINTER(ctypes.c_float),  # coords_2
@@ -155,13 +155,13 @@ def radial_distribution_c(
         ctypes.POINTER(ctypes.c_float),  # box
         ctypes.c_float,  # r_max
     ]
-    lib.radial_distribution.restype = ctypes.c_int
+    lib.radial_distribution_naive.restype = ctypes.c_int
 
     g_r = np.zeros(num_bins, dtype=np.float32)
 
     start_time = perf_counter()
 
-    res = lib.radial_distribution(
+    res = lib.radial_distribution_naive(
         coords_1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
         n1,
         coords_2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
@@ -169,7 +169,7 @@ def radial_distribution_c(
         g_r.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
         num_bins,
         box.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-        ctypes.c_float(dist_cutoff),
+        ctypes.c_float(r_max),
     )
 
     elapsed_time = perf_counter() - start_time

@@ -8,7 +8,7 @@ sys.path.append(
 )
 from python import functions
 
-rows = 10000
+rows = 100
 
 # Generate random coordinates matrices
 rng = np.random.default_rng()
@@ -16,11 +16,11 @@ pbc = rng.uniform(low=0.0, high=10.0, size=(1, 3))
 test_coords_1 = rng.uniform(low=0.0, high=10.0, size=(rows, 3))
 test_coords_2 = rng.uniform(low=0.0, high=10.0, size=(rows, 3))
 
-frame_results_py, elapsed_time_py = functions.radial_distribution_py(
+frame_results_py, elapsed_time_py = functions.radial_distribution_naive_py(
     pbc, test_coords_1, test_coords_2
 )
 
-frame_results_C, elapsed_time_C = functions.radial_distribution_c(
+frame_results_C, elapsed_time_C = functions.radial_distribution_naive_c(
     pbc, test_coords_1, test_coords_2
 )
 

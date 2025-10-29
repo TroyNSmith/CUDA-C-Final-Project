@@ -16,7 +16,7 @@ extern "C" {
 
 #define PI 3.14159265f
 
-EXPORT int radial_distribution(
+EXPORT int radial_distribution_naive(
     const float *coords_1, int n1,
     const float *coords_2, int n2,
     float *g_r, int num_bins,
