@@ -1,11 +1,11 @@
 import ctypes
 import os
 import sys
+from time import perf_counter
 from typing import Callable
 
 import numpy as np
 from numpy.typing import ArrayLike
-from scipy.spatial import cKDTree
 
 from .coordinates import System
 
@@ -44,7 +44,7 @@ def time_average(
         if i % skip != 0:
             continue
 
-        if i >= 25:
+        if i >= 1:
             break
 
         counts += 1
@@ -54,7 +54,11 @@ def time_average(
         assert np.array_equal(pbc, np.diagonal(frame_2.box)), (
             f"Systems 1 and 2 do not have matching boxes at time {frame_1.time}."
         )
-        frame_results = function(pbc, frame_1.coordinates, frame_2.coordinates)
+        frame_results, elapsed_time = function(
+            pbc, frame_1.coordinates, frame_2.coordinates
+        )
+
+        print(f"Iteration {i}: {elapsed_time} s")
 
         if results is None:
             results = frame_results
@@ -65,60 +69,63 @@ def time_average(
 
 
 def radial_distribution_py(
-    pbc: ArrayLike,
-    coords_1: ArrayLike,
-    coords_2: ArrayLike = None,
-    bins: ArrayLike = None,
-    dist_cutoff: float = 2.50,
+    box: np.ndarray,
+    coords_1: np.ndarray,
+    coords_2: np.ndarray,
+    num_bins: int = 100,
+    r_max: float = 2.50,
 ):
-    """Compute radical distribution between two sets of coordinates.
+    """
+    Direct Python equivalent of the C function `radial_distribution`.
+    Uses 32-bit floats and identical arithmetic/branching for bit-for-bit comparison.
+    """
 
-    If frame_2 is not provided, radial distances amongst coordinates in frame_1 will be considered."""
-    block_size = 10000
+    # --- Argument validation ---
+    if coords_1 is None or coords_2 is None or box is None:
+        raise ValueError("Null pointer argument")
 
-    if coords_2 is None:
-        coords_2 = coords_1
-        distinct = False
-    else:
-        distinct = True
+    # Match C data layout (flat, float32)
+    coords_1 = np.ascontiguousarray(coords_1, dtype=np.float32).ravel()
+    coords_2 = np.ascontiguousarray(coords_2, dtype=np.float32).ravel()
+    box = np.ascontiguousarray(box, dtype=np.float32).ravel()
 
-    if bins is None:
-        bins = np.linspace(0.1, dist_cutoff, num=int(dist_cutoff / 0.01))
+    n1 = len(coords_1) // 3
+    n2 = len(coords_2) // 3
 
-    kdt_2 = cKDTree(coords_2 % pbc, boxsize=pbc)
+    # Allocate output
+    g_r = np.zeros(num_bins, dtype=np.float32)
 
-    histogram = np.zeros(len(bins) - 1, dtype=np.float32)
-    for start in range(0, len(coords_1), block_size):
-        end = min(start + block_size, len(coords_1))
-        current_block = coords_1[start:end]
+    # Match C: float division -> float
+    r_max = np.float32(r_max)
+    bin_width = np.float32(r_max / np.float32(num_bins))
 
-        neighbors = kdt_2.query_ball_point(current_block, r=dist_cutoff)
+    half = np.float32(0.5)
+    one = np.float32(1.0)
 
-        for i, neighbor in enumerate(neighbors):
-            if not neighbor:
-                continue
+    start = perf_counter()
 
-            ref = current_block[i]
+    # --- identical logic to C code ---
+    for i in range(n1):
+        for j in range(n2):
+            dx = np.float32(abs(coords_1[3 * i + 0] - coords_2[3 * j + 0]))
+            dy = np.float32(abs(coords_1[3 * i + 1] - coords_2[3 * j + 1]))
+            dz = np.float32(abs(coords_1[3 * i + 2] - coords_2[3 * j + 2]))
 
-            displacements = abs(coords_2[neighbor] - ref)
-            distances = np.linalg.norm(displacements, axis=1)
+            if dx > half * box[0]:
+                dx = box[0] - dx
+            if dy > half * box[1]:
+                dy = box[1] - dy
+            if dz > half * box[2]:
+                dz = box[2] - dz
 
-            if not distinct:
-                mask = neighbors > i + start  # Don't double count atoms
-                if not np.any(mask):
-                    continue
-                distances = distances[mask]
+            r = np.float32(np.sqrt(dx * dx + dy * dy + dz * dz))
+            bin_idx = int(r / bin_width)
 
-            block_histogram, _ = np.histogram(distances, bins=bins)
-            histogram += block_histogram
+            if 0 <= bin_idx < num_bins:
+                g_r[bin_idx] += one
 
-    histogram = histogram / len(coords_2)
-    histogram = histogram / (
-        4 / 3 * np.pi * bins[1:] ** 3 - 4 / 3 * np.pi * bins[:-1] ** 3
-    )
-    histogram = histogram / (len(coords_1) / np.prod(pbc))
-
-    return histogram
+    elapsed = perf_counter() - start
+    return g_r, elapsed
 
 
 def radial_distribution_c(
@@ -130,6 +137,13 @@ def radial_distribution_c(
 ):
     if coords_2 is None:
         coords_2 = coords_1
+
+    coords_1 = np.asarray(coords_1, dtype=np.float32).ravel()
+    coords_2 = np.asarray(coords_2, dtype=np.float32).ravel()
+    box = np.asarray(box, dtype=np.float32).ravel()
+
+    n1 = len(coords_1) // 3
+    n2 = len(coords_2) // 3
 
     lib.radial_distribution.argtypes = [
         ctypes.POINTER(ctypes.c_float),  # coords_1
@@ -145,19 +159,18 @@ def radial_distribution_c(
 
     g_r = np.zeros(num_bins, dtype=np.float32)
 
+    start_time = perf_counter()
+
     res = lib.radial_distribution(
         coords_1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-        len(coords_1),
+        n1,
         coords_2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-        len(coords_2),
+        n2,
         g_r.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
         num_bins,
         box.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
         ctypes.c_float(dist_cutoff),
     )
 
-    print("Histogram:", g_r)
-
-
-if __name__ == "__main__":
-    radial_distribution_c()
+    elapsed_time = perf_counter() - start_time
+    return g_r, elapsed_time
