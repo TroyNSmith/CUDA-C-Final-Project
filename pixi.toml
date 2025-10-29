@@ -6,6 +6,9 @@ platforms = ["linux-64", "win-64"]
 version = "0.1.0"
 
 [tasks]
+launch_inter = "interact -p gpu_p --gres=gpu:A100:1 --mem=16G"
+load_compilers = { cmd = "module load CUDA/12.8.0 & module load GCC/12.3.0" }
+make = { cmd = "make", depends-on = ["load_compilers"] }
 
 [dependencies]
 pandas = ">=2.3.3,<3"

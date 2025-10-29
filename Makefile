@@ -10,6 +10,7 @@ OBJ = $(OBJ_C) $(OBJ_CU)
 .PHONY: all clean
 
 ifeq ($(OS),Windows_NT)
+
 # On Windows, prefer nvcc if available (user can override NVCC variable)
 NVCC ?= C:\tools\nvcc.cmd
 CC = gcc
@@ -22,12 +23,25 @@ TARGET = lib/lib.so
 RM_CMD = @rm -f $(OBJ) $(TARGET)
 endif
 
-# nvcc flags (users can override NVCCFLAGS when calling make)
+# CUDA compiler setup
+# Allow override NVCC:  make NVCC=/path/to/nvcc
+NVCC ?= nvcc
+
+# Default include and flags
 ifeq ($(OS),Windows_NT)
-NVCCFLAGS ?= -Iinclude
+    NVCCFLAGS ?= -Iinclude
 else
-NVCCFLAGS ?= -Iinclude -Xcompiler -fPIC
+    NVCCFLAGS ?= -Iinclude -Xcompiler -fPIC
 endif
+
+# Try to detect a nonstandard g++ install (like on Sapelo2)
+ifeq ($(shell which g++ 2>/dev/null | grep -q /apps/eb && echo yes),yes)
+    HOSTCXX := $(shell which g++)
+    NVCCFLAGS += -ccbin $(HOSTCXX)
+endif
+
+# Suppress deprecation warning
+NVCCFLAGS += -Wno-deprecated-gpu-targets
 
 all: $(TARGET)
 
