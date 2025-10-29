@@ -11,6 +11,7 @@ from python import coordinates, functions
 system = coordinates.System(
     topology="/home/tns97255/CUDA-C-Final-Project/tests/data/test.gro",
     trajectory="/home/tns97255/CUDA-C-Final-Project/tests/data/test.xtc",
+    center_of_masses=True,
 )
 for i, frame in enumerate(system.frames):
     if i > 1:
