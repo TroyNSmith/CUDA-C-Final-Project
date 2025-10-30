@@ -1,81 +1,37 @@
-CFLAGS = -Wall -fPIC -Iinclude #-std=c99
+NVCC        = nvcc
+NVCC_FLAGS  = -O2 -g -Iinclude
 
-# Sources: C and optional CUDA
-SRC_C = $(wildcard src/*.c)
-SRC_CU = $(wildcard src/*.cu)
-OBJ_C = $(SRC_C:.c=.o)
-OBJ_CU = $(SRC_CU:.cu=.o)
-OBJ = $(OBJ_C) $(OBJ_CU)
+SRC_DIR     = src
+OBJ_DIR     = obj
+BIN_DIR     = bin
+TARGET      = $(BIN_DIR)/benchmark
 
-.PHONY: all clean
+SRC         = $(SRC_DIR)/benchmark.cu $(SRC_DIR)/kernel.cu $(SRC_DIR)/support.cu
+OBJ         = $(OBJ_DIR)/benchmark.o $(OBJ_DIR)/kernel.o $(OBJ_DIR)/support.o
 
 ifeq ($(OS),Windows_NT)
-
-# On Windows, prefer nvcc if available (user can override NVCC variable)
-NVCC ?= C:\tools\nvcc.cmd
-CC = gcc
-TARGET = lib/lib.dll
-RM_CMD = @cmd /C "del /Q $(subst /,\,$(OBJ)) $(subst /,\,$(TARGET)) 2>nul || exit /B 0"
+    MKDIR = @if not exist $(subst /,\, $1) mkdir $(subst /,\, $1)
+    RM = @del /Q $(subst /,\, $1) 2>nul || exit 0
+    CUDA_PATH ?= "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0"
+    LD_FLAGS = -lcudart -L"$(CUDA_PATH)\lib\x64"
 else
-NVCC ?= nvcc
-CC = gcc
-TARGET = lib/lib.so
-RM_CMD = @rm -f $(OBJ) $(TARGET)
+    MKDIR = mkdir -p $1
+    RM = rm -rf $1
+    CUDA_PATH ?= /usr/local/cuda
+    LD_FLAGS = -lcudart -L$(CUDA_PATH)/lib64
 endif
 
-# CUDA compiler setup
-# Allow override NVCC:  make NVCC=/path/to/nvcc
-NVCC ?= nvcc
+default: $(TARGET)
 
-# Default include and flags
-ifeq ($(OS),Windows_NT)
-    NVCCFLAGS ?= -Iinclude
-else
-    NVCCFLAGS ?= -Iinclude -Xcompiler -fPIC
-endif
+$(BIN_DIR) $(OBJ_DIR):
+	$(call MKDIR,$@)
 
-# Try to detect a nonstandard g++ install (like on Sapelo2)
-ifeq ($(shell which g++ 2>/dev/null | grep -q /apps/eb && echo yes),yes)
-    HOSTCXX := $(shell which g++)
-    NVCCFLAGS += -ccbin $(HOSTCXX)
-endif
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu | $(OBJ_DIR)
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
 
-# Suppress deprecation warning
-NVCCFLAGS += -Wno-deprecated-gpu-targets
-
-all: $(TARGET)
-
-# Create lib dir in a portable way
-ifeq ($(OS),Windows_NT)
-MKDIR_LIB = @cmd /C "if not exist lib mkdir lib"
-else
-MKDIR_LIB = mkdir -p lib
-endif
-
-# platform libs (avoid -lm on Windows where MSVC linker looks for m.lib)
-ifeq ($(OS),Windows_NT)
-LIBS = -llegacy_stdio_definitions
-else
-LIBS = -lm
-endif
-
-# Link object files into shared library. Use nvcc to link if CUDA objects exist
-$(TARGET): $(OBJ)
-	$(MKDIR_LIB)
-
-ifeq ($(strip $(OBJ_CU)),)
-	$(CC) -shared -o $@ $^ $(LIBS)
-else
-	$(NVCC) -shared $(NVCCFLAGS) -o $@ $^ $(LIBS)
-endif
-
-# Compile .c into .o
-src/%.o: src/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# Compile .cu into .o using nvcc
-src/%.o: src/%.cu
-	$(NVCC) $(NVCCFLAGS) -c $< -o $@
+$(TARGET): $(OBJ) | $(BIN_DIR)
+	$(NVCC) $(OBJ) -o $@ $(LD_FLAGS)
 
 clean:
-	$(RM_CMD)
+	$(call RM,$(OBJ_DIR))
+	$(call RM,$(BIN_DIR))
