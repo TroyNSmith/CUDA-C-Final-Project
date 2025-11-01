@@ -5,22 +5,24 @@
 #include <chrono>
 
 #include "support.h"
-#include "kernel.h"
+#include "kernel.cu"
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// #ifdef __cplusplus
+// extern "C" {
+// #endif
 
 void verify(float *A, float *B, int n)
 {
-	const float Tolerance = 1e-2;
+	const float Tolerance = 2; // Seems large but bins change in increments of 2, so this is the smallest possible difference
 	for (int i = 0; i < n; i++)
 	{
 		float difference = A[i] - B[i];
 		if (difference > Tolerance ||
 			difference < -Tolerance)
 		{
+			printf("\nEntry %d differs: GPU = %f, CPU = %f, diff = %f",
+				i, A[i], B[i], difference);
 			printf("\nTEST FAILED\n\n");
 			exit(0);
 		}
@@ -32,9 +34,20 @@ void verify(float *A, float *B, int n)
 #define r_max 2.50
 #define num_bins 1000
 #define box_size 10.0
+#define BLOCK_SIZE 32
 
 int main(int argc, char **argv)
 {
+
+	int device;
+    cudaGetDevice(&device); // Get the current device
+
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, device); // Get device properties
+
+	int constant_mem = (int)deviceProp.totalConstMem;          
+
+    printf("Total constant memory: %d bytes\n", (int)deviceProp.totalConstMem);
 	Timer timer;
 	cudaError_t cuda_ret;
 
@@ -97,14 +110,14 @@ int main(int argc, char **argv)
 	float *A_d;
 	cudaMalloc((void **) &A_d, 3 * n * sizeof(float));
 
-	float *B_d;
-	cudaMalloc((void **) &B_d, 3 * m * sizeof(float));
+	// float *B_d;
+	// cudaMalloc((void **) &B_d, 3 * m * sizeof(float));
 
 	float *G_d;
 	cudaMalloc((void **) &G_d, num_bins * sizeof(float));
 
-	float *Box_d;
-	cudaMalloc((void **) &Box_d, 3 * sizeof(float));
+	// float *Box_d;
+	// cudaMalloc((void **) &Box_d, 3 * sizeof(float));
 
 	cudaDeviceSynchronize();
 	stopTime(&timer);
@@ -116,9 +129,9 @@ int main(int argc, char **argv)
 	startTime(&timer);	
 
 	cudaMemcpy(A_d, A_h, 3 * n * sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(B_d, B_h, 3 * m * sizeof(float), cudaMemcpyHostToDevice);
+	//cudaMemcpy(B_d, B_h, 3 * m * sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(G_d, G_h, num_bins * sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(Box_d, Box_h, 3 * sizeof(float), cudaMemcpyHostToDevice);
+	// cudaMemcpy(Box_d, Box_h, 3 * sizeof(float), cudaMemcpyHostToDevice);
 
 	cudaDeviceSynchronize();
 	stopTime(&timer);
@@ -145,10 +158,26 @@ int main(int argc, char **argv)
 	fflush(stdout);
 	startTime(&timer);
 	
-	dim3 blockSize(32, 32);
+	dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
 	dim3 gridSize((n + blockSize.x - 1) / blockSize.x, (m + blockSize.y - 1) / blockSize.y);
 
-	cudaKernel<<<gridSize, blockSize>>>(A_d, n, B_d, m, G_d, num_bins, Box_d, r_max / num_bins);
+	// Launch kernel by iterating over tiles in the B (column) dimension.
+	int atomsInConstantMemory = 170 * blockSize.y;
+	int tilesY = (m + atomsInConstantMemory - 1) / atomsInConstantMemory;
+	for (int tile = 0; tile < tilesY; ++tile) {
+		// number of columns in this tile (last tile may be smaller)
+		int colsInTile = atomsInConstantMemory;
+		if (tile == tilesY - 1) colsInTile = m - tile * atomsInConstantMemory;
+		if (colsInTile <= 0) break;
+
+		// copy only this tile's coordinates (colsInTile * 3 floats) into constant memory
+		cudaMemcpyToSymbol(B_C, &B_h[tile * atomsInConstantMemory * 3], colsInTile * 3 * sizeof(float), 0, cudaMemcpyHostToDevice);
+
+		// launch kernel for this tile (grid y dim = 1 because tile index is provided explicitly)
+		dim3 tileGrid((n + blockSize.x - 1) / blockSize.x, (colsInTile + blockSize.y - 1) / blockSize.y);
+		joshCudaKernel<<<tileGrid, blockSize>>>(A_d, n, m, G_d, num_bins, r_max / num_bins, box_size, box_size, box_size, tile);
+	}
+	//cudaKernel<<<gridSize, blockSize>>>(A_d, n, B_d, m, G_d, num_bins, Box_d, r_max / num_bins);
 
 	cuda_ret = cudaDeviceSynchronize();
 	if (cuda_ret != cudaSuccess) FATAL("Unable to launch kernel");
@@ -160,7 +189,7 @@ int main(int argc, char **argv)
 	fflush(stdout);
 	startTime(&timer);
 
-	cudaMemcpy(G_h, G_d, 3 * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(G_h, G_d, num_bins * sizeof(float), cudaMemcpyDeviceToHost);
 
 	cudaDeviceSynchronize();
 	stopTime(&timer);
@@ -173,11 +202,12 @@ int main(int argc, char **argv)
 
 	// Free variables
 	free(A_h); free(B_h); free(G_h);
-	cudaFree(A_d); cudaFree(B_d); cudaFree(G_d);
+	cudaFree(A_d); //cudaFree(B_d);
+	cudaFree(G_d);
 	
     return 0;
 }
 
-#ifdef __cplusplus
-}
-#endif
+// #ifdef __cplusplus
+// }
+// #endif

@@ -5,8 +5,8 @@ OBJ_DIR     = obj
 BIN_DIR     = bin
 TARGET      = $(BIN_DIR)/benchmark
 
-SRC         = $(SRC_DIR)/benchmark.cu $(SRC_DIR)/kernel.cu $(SRC_DIR)/support.cu
-OBJ         = $(OBJ_DIR)/benchmark.o $(OBJ_DIR)/kernel.o $(OBJ_DIR)/support.o
+SRC         = $(SRC_DIR)/benchmark.cu $(SRC_DIR)/support.cu
+OBJ         = $(OBJ_DIR)/benchmark.o $(OBJ_DIR)/support.o
 
 ifeq ($(OS),Windows_NT)
     NVCC = C:\tools\nvcc.cmd

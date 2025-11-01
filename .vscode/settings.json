@@ -3,6 +3,7 @@
         "*.hip": "cpp",
         "limits.h": "c",
         "stdio.h": "c",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "cmath": "cpp"
     }
 }

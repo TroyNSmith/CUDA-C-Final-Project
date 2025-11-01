@@ -19,6 +19,8 @@ extern "C" {
 /* Small epsilon to make bin assignment consistent near bin boundaries */
 #define EPS 1e-6f
 
+#define BLOCK_SIZE 32
+
 void naiveKernel(
     const float *A, int n,
     const float *B, int m,
@@ -51,7 +53,7 @@ void naiveKernel(
                 
             int bin = (int)floorf(r / bin_width + EPS);
 
-            if (bin >= 0 && bin < num_bins)
+            if (bin > 0 && bin < num_bins)
                 g_r[bin] += 1.0f;
         }
     }
@@ -81,8 +83,44 @@ __global__ void cudaKernel(
 
     int bin = (int)floorf(r / bin_width + EPS);
 
-    if (bin >= 0 && bin < num_bins)
+    if (bin > 0 && bin < num_bins)
         atomicAdd(&g_r[bin], 1.0f);
+}
+
+/* Constant memory holds one tile of B (up to BLOCK_SIZE atoms, 3 coords each) */
+__constant__ float B_C[65536 / sizeof(float)];
+
+__global__ void joshCudaKernel(
+    float *A, int n,
+    int m,
+    float *g_r, int num_bins,
+    float bin_width, float box_x, float box_y, float box_z,
+    int tile_y) {
+
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col_in_tile = blockDim.y * blockIdx.y + threadIdx.y;
+    int col = tile_y * (170 * blockDim.y) + col_in_tile;
+
+    if (row >= n || col >= m || col > row)
+        return;
+
+    //printf("Row: %d, Col: %d, Tile: %d, col_in_tile = %d\n", threadIdx.x, threadIdx.y, tile_y, col_in_tile);
+
+    float dx = fabsf(A[3*row + 0] - B_C[3*col_in_tile + 0]);
+    float dy = fabsf(A[3*row + 1] - B_C[3*col_in_tile + 1]);
+    float dz = fabsf(A[3*row + 2] - B_C[3*col_in_tile + 2]);
+
+    // Apply minimum image convention
+    if (dx > 0.5f * box_x) dx = box_x - dx;
+    if (dy > 0.5f * box_y) dy = box_y - dy;
+    if (dz > 0.5f * box_z) dz = box_z - dz;
+
+    float r = sqrtf(dx*dx + dy*dy + dz*dz);
+
+    int bin = (int)floorf(r / bin_width + EPS);
+
+    if (bin > 0 && bin < num_bins)
+        atomicAdd(&g_r[bin], 2.0f);
 }
 
 // EXPORT double radial_distribution_cuda(
