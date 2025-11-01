@@ -1,4 +1,4 @@
-NVCC        = nvcc
+NVCC        = C:\tools\nvcc.cmd
 NVCC_FLAGS  = -O2 -g -Iinclude
 
 SRC_DIR     = src
@@ -12,7 +12,7 @@ OBJ         = $(OBJ_DIR)/benchmark.o $(OBJ_DIR)/kernel.o $(OBJ_DIR)/support.o
 ifeq ($(OS),Windows_NT)
     MKDIR = @if not exist $(subst /,\, $1) mkdir $(subst /,\, $1)
     RM = @del /Q $(subst /,\, $1) 2>nul || exit 0
-    CUDA_PATH ?= "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0"
+    CUDA_PATH ?= "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v130"
     LD_FLAGS = -lcudart -L"$(CUDA_PATH)\lib\x64"
 else
     MKDIR = mkdir -p $1

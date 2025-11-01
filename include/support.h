@@ -9,11 +9,11 @@
 #ifndef __FILEH__
 #define __FILEH__
 
-#include <sys/time.h>
+#include <chrono>
 
 typedef struct {
-    struct timeval startTime;
-    struct timeval endTime;
+    std::chrono::high_resolution_clock::time_point startTime;
+    std::chrono::high_resolution_clock::time_point endTime;
 } Timer;
 
 #ifdef __cplusplus

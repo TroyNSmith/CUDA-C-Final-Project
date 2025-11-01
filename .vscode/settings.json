@@ -1,6 +1,8 @@
 {
     "files.associations": {
+        "*.hip": "cpp",
         "limits.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "chrono": "cpp"
     }
 }

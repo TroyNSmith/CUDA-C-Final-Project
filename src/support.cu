@@ -13,16 +13,16 @@
 #include "support.h"
 
 void startTime(Timer* timer) {
-  gettimeofday(&(timer->startTime), NULL);
+  timer->startTime = std::chrono::high_resolution_clock::now();
 }
 
+
 void stopTime(Timer* timer) {
-  gettimeofday(&(timer->endTime), NULL);
+  timer->endTime = std::chrono::high_resolution_clock::now();
 }
 
 float elapsedTime(Timer timer) {
-  return ((float) ((timer.endTime.tv_sec - timer.startTime.tv_sec) \
-                + (timer.endTime.tv_usec - timer.startTime.tv_usec)/1.0e6));
+  return std::chrono::duration<float>(timer.endTime - timer.startTime).count();
 }
 
 // Not under Copyright
