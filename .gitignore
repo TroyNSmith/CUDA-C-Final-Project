@@ -1,7 +1,13 @@
 *.o
+bin/*
+lib/*
 
 # pixi environments
 .pixi/*
 !.pixi/config.toml
 
 lib/*
+
+xdr*
+xtc*
+coords.cu

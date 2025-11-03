@@ -19,8 +19,6 @@ extern "C" {
 /* Small epsilon to make bin assignment consistent near bin boundaries */
 #define EPS 1e-6f
 
-#define BLOCK_SIZE 32
-
 void naiveKernel(
     const float *A, int n,
     const float *B, int m,
@@ -87,15 +85,55 @@ __global__ void cudaKernel(
         atomicAdd(&g_r[bin], 1.0f);
 }
 
+__global__ void localSMKernel(
+    float *A, int n,
+    float *B, int m,
+    float *g_r, int num_bins,
+    float *box, float bin_width) {
+    
+    extern __shared__ unsigned int local_hist[];
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int threads = blockDim.x * blockDim.y;
+    
+    // Use a local histogram to do atomic adds in SM rather than GM
+    for (int i = tid; i < num_bins; i += threads)
+        local_hist[i] = 0.0f;
+    __syncthreads();
+    
+    unsigned int row = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row >= n || col >= m) return;
+
+    float dx = fabsf(A[3*row + 0] - B[3*col + 0]);
+    float dy = fabsf(A[3*row + 1] - B[3*col + 1]);
+    float dz = fabsf(A[3*row + 2] - B[3*col + 2]);
+
+    // Apply minimum image convention
+    if (dx > 0.5f * box[0]) dx = box[0] - dx;
+    if (dy > 0.5f * box[1]) dy = box[1] - dy;
+    if (dz > 0.5f * box[2]) dz = box[2] - dz;
+
+    float r = sqrtf(dx*dx + dy*dy + dz*dz);
+
+    int bin = (int)floorf(r / bin_width + EPS);
+
+    if (bin > 0 && bin < num_bins)
+        atomicAdd(&local_hist[bin], 1.0f);
+    __syncthreads();
+    
+    // GM atomic adds once per bin rather than once per thread
+    for (int i = tid; i < num_bins; i += threads)
+        if (local_hist[i] > 0)
+            atomicAdd(&g_r[i], local_hist[i]);
+}
+
 /* Constant memory holds one tile of B (up to BLOCK_SIZE atoms, 3 coords each) */
 __constant__ float B_C[65536 / sizeof(float)];
 
 __global__ void joshCudaKernel(
-    float *A, int n,
-    int m,
-    float *g_r, int num_bins,
-    float bin_width, float box_x, float box_y, float box_z,
-    int tile_y) {
+    float *A, int n, int m,
+    float *g_r, int num_bins, float bin_width,
+    float box_x, float box_y, float box_z, int tile_y) {
 
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col_in_tile = blockDim.y * blockIdx.y + threadIdx.y;
@@ -123,61 +161,57 @@ __global__ void joshCudaKernel(
         atomicAdd(&g_r[bin], 2.0f);
 }
 
-// EXPORT double radial_distribution_cuda(
-//     const float *coords_1, int n1,
-//     const float *coords_2, int n2,
-//     float *g_r, int num_bins,
-//     const float *box, float r_max)
-// {
-//     if (!coords_1 || !coords_2 || !g_r || !box) {
-//         fprintf(stderr, "[Error] Null pointer in arguments\n");
-//         return -1;
-//     }
+__global__ void tiledLocalSMKernel(
+    float *A, int n, int m,
+    float *g_r, int num_bins, float bin_width,
+    float box_x, float box_y, float box_z, int tile_y) {
 
-//     float bin_width = r_max / num_bins;
+    // Thread coordinates
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-//     float *d_coords_1;
-//     float *d_coords_2;
-//     float *d_box;
-//     float *d_g_r;
-//     CUDA_CHECK(cudaMalloc((void**)&d_coords_1, n1 * 3 * sizeof(float)));
-//     CUDA_CHECK(cudaMalloc((void**)&d_coords_2, n2 * 3 * sizeof(float)));
-//     CUDA_CHECK(cudaMalloc((void**)&d_box, 3 * sizeof(float)));
-//     CUDA_CHECK(cudaMalloc((void**)&d_g_r, num_bins * sizeof(float)));
-//     CUDA_CHECK(cudaMemset(d_g_r, 0, num_bins * sizeof(float)));
+    if (x >= n) return; // out-of-bounds
 
+    // Global column index in B
+    int col = tile_y * (blockDim.y * gridDim.y) + y;
+    if (col >= m) return; // out-of-bounds column
 
-//     CUDA_CHECK(cudaMemcpy(d_coords_1, coords_1, n1 * 3 * sizeof(float), cudaMemcpyHostToDevice));
-//     CUDA_CHECK(cudaMemcpy(d_coords_2, coords_2, n2 * 3 * sizeof(float), cudaMemcpyHostToDevice));
-//     CUDA_CHECK(cudaMemcpy(d_box, box, 3 * sizeof(float), cudaMemcpyHostToDevice));
+    // Linear thread index in block
+    int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    int threads = blockDim.x * blockDim.y;
 
+    // Shared-memory histogram per block
+    extern __shared__ unsigned int local_hist[];
+    for (int i = tid; i < num_bins; i += threads)
+        local_hist[i] = 0;
+    __syncthreads();
 
-//     auto start = std::chrono::high_resolution_clock::now(); // Start time
-//     // Use a block size that keeps threads-per-block <= 1024 (e.g., 32x32 = 1024)
-//     dim3 blockSize(32, 32, 1);
-//     dim3 gridSize((n1 + blockSize.x - 1) / blockSize.x, (n2 + blockSize.y - 1) / blockSize.y, 1);
-//     radial_distribution_kernel<<<gridSize, blockSize>>>(
-//         d_coords_1, n1,
-//         d_coords_2, n2,
-//         d_g_r, num_bins,
-//         d_box, bin_width
-//     );
+    float bx = B_C[3*y + 0];
+    float by = B_C[3*y + 1];
+    float bz = B_C[3*y + 2];
 
-//     CUDA_CHECK(cudaGetLastError());
-//     CUDA_CHECK(cudaDeviceSynchronize());
-//     auto end = std::chrono::high_resolution_clock::now();   // End time
+    float dx = fabsf(A[3*x + 0] - bx);
+    float dy = fabsf(A[3*x + 1] - by);
+    float dz = fabsf(A[3*x + 2] - bz);
 
-//     std::chrono::duration<double> elapsed = end - start;    // Calculate duration
-//     double time = elapsed.count();
+    // Minimum image
+    if (dx > 0.5f * box_x) dx = box_x - dx;
+    if (dy > 0.5f * box_y) dy = box_y - dy;
+    if (dz > 0.5f * box_z) dz = box_z - dz;
 
-//     CUDA_CHECK(cudaMemcpy(g_r, d_g_r, num_bins * sizeof(float), cudaMemcpyDeviceToHost));
+    float r = sqrtf(dx*dx + dy*dy + dz*dz);
 
-//     CUDA_CHECK(cudaFree(d_coords_1));
-//     CUDA_CHECK(cudaFree(d_coords_2));
-//     CUDA_CHECK(cudaFree(d_box));
-//     CUDA_CHECK(cudaFree(d_g_r));
-//     return time;
-// }
+    int bin = (int)floorf(r / bin_width + EPS);
+    if (bin > 0 && bin < num_bins)
+        atomicAdd(&local_hist[bin], 1);
+
+    __syncthreads();
+
+    // Reduce local histogram to global histogram
+    for (int i = tid; i < num_bins; i += threads)
+        if (local_hist[i] > 0)
+            atomicAdd(&g_r[i], local_hist[i]);
+}
 
 #ifdef __cplusplus
 }
