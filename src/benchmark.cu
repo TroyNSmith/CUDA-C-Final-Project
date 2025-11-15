@@ -33,6 +33,8 @@ void verify(float *A, float *B, int n)
     printf("\nTEST PASSED\n\n");
 }
 
+#define RUN_COUNT 50
+
 // Kernel runner to make things less chaotic
 void runKernel(const char *label, void (*launchFunc)(void),
                float *G_h, float *G_d, float *G_reference,
@@ -42,19 +44,37 @@ void runKernel(const char *label, void (*launchFunc)(void),
     printf("\nLaunching %s...", label);
     fflush(stdout);
 
-    cudaMemset(G_d, 0, num_bins * sizeof(float));
 
     // --- Launch & time kernel ---
+    float timeK = 0.0f;
+    float timeM = 0.0f;
     startTime(&timer);
-    launchFunc();
-    cudaError_t cuda_ret = cudaDeviceSynchronize();
-    if (cuda_ret != cudaSuccess) {
-        fprintf(stderr, "\nError launching %s: %s\n",
-                label, cudaGetErrorString(cuda_ret));
-        exit(EXIT_FAILURE);
+    for (int i = 0; i < RUN_COUNT; i++) {
+        stopTime(&timer);
+        timeM += elapsedTime(timer);
+        startTime(&timer);
+        cudaMemset(G_d, 0, num_bins * sizeof(float));
+        cudaError_t cuda_ret = cudaDeviceSynchronize();
+        if (cuda_ret != cudaSuccess) {
+            fprintf(stderr, "\nError setting memory %s: %s\n",
+                    label, cudaGetErrorString(cuda_ret));
+            exit(EXIT_FAILURE);
+        }
+        stopTime(&timer);
+        timeK += elapsedTime(timer);
+        startTime(&timer);
+        launchFunc();
+        cuda_ret = cudaDeviceSynchronize();
+        if (cuda_ret != cudaSuccess) {
+            fprintf(stderr, "\nError launching %s: %s\n",
+                    label, cudaGetErrorString(cuda_ret));
+            exit(EXIT_FAILURE);
+        }
     }
     stopTime(&timer);
-    printf(" %f s\n", elapsedTime(timer));
+    timeM += elapsedTime(timer);
+    printf("\nRunning %d kernels took %f seconds or %f seconds per kernel s\n", RUN_COUNT, timeM, timeM / RUN_COUNT);
+    printf("Total time including memory set took %f seconds or %f seconds per kernel s\n", timeK, timeK / RUN_COUNT);
 
     // --- Copy back results ---
     printf("Copying results from device to host...");
@@ -127,6 +147,60 @@ void launchTiledLocalSMKernel(void) {
     }
 }
 
+void launchTunedTiledJoshKernel(void) {
+    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
+    int atomsInConstantMemory = 170 * blockSize.y;
+    int tilesY = (sim.m + atomsInConstantMemory - 1) / atomsInConstantMemory;
+    int number_of_tiles_y = 2;
+    //printf("TilesY: %d\n", tilesY);
+
+    for (int tile = 0; tile < tilesY; ++tile) {
+        int colsInTile = (tile == tilesY - 1)
+                             ? sim.m - tile * atomsInConstantMemory
+                             : atomsInConstantMemory;
+        if (colsInTile <= 0) break;
+        int number_of_iterations = (colsInTile + (blockSize.y * number_of_tiles_y) - 1) / (blockSize.y * number_of_tiles_y); // # of iterations to cover the Y dimension
+
+        cudaMemcpyToSymbol(B_C, &sim.B_h[tile * atomsInConstantMemory * 3],
+            			   colsInTile * 3 * sizeof(float), 0, cudaMemcpyHostToDevice);
+
+        dim3 tileGrid((sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
+        //printf("Launching with %d x tiles and %d y tiles\n", (sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
+        tunedTiledJoshCudaKernel<<<tileGrid, blockSize>>>(
+            sim.A_d, sim.n, sim.m, sim.G_d,
+            num_bins, r_max / num_bins,
+            box_size, box_size, box_size, tile, number_of_iterations, number_of_tiles_y
+        );
+    }
+}
+
+void launchTiledJoshKernel(void) {
+    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
+    int atomsInConstantMemory = 170 * blockSize.y;
+    int tilesY = (sim.m + atomsInConstantMemory - 1) / atomsInConstantMemory;
+    //printf("TilesY: %d\n", tilesY);
+
+    for (int tile = 0; tile < tilesY; ++tile) {
+        int colsInTile = (tile == tilesY - 1)
+                             ? sim.m - tile * atomsInConstantMemory
+                             : atomsInConstantMemory;
+        if (colsInTile <= 0) break;
+
+        int number_of_tiles_y = (colsInTile + blockSize.y - 1) / blockSize.y;
+
+        cudaMemcpyToSymbol(B_C, &sim.B_h[tile * atomsInConstantMemory * 3],
+            			   colsInTile * 3 * sizeof(float), 0, cudaMemcpyHostToDevice);
+
+        dim3 tileGrid((sim.n + blockSize.x - 1) / blockSize.x, 1);
+        //printf("Launching with %d x tiles and %d y tiles\n", (sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
+        tiledJoshCudaKernel<<<tileGrid, blockSize>>>(
+            sim.A_d, sim.n, sim.m, sim.G_d,
+            num_bins, r_max / num_bins,
+            box_size, box_size, box_size, tile, number_of_tiles_y
+        );
+    }
+}
+
 void launchJoshKernel(void) {
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     int atomsInConstantMemory = 170 * blockSize.y;
@@ -138,12 +212,13 @@ void launchJoshKernel(void) {
                              : atomsInConstantMemory;
         if (colsInTile <= 0) break;
 
+        int number_of_tiles_y = (colsInTile + blockSize.y - 1) / blockSize.y;
+
         cudaMemcpyToSymbol(B_C, &sim.B_h[tile * atomsInConstantMemory * 3],
             			   colsInTile * 3 * sizeof(float), 0, cudaMemcpyHostToDevice);
 
-        dim3 tileGrid((sim.n + blockSize.x - 1) / blockSize.x,
-                      (colsInTile + blockSize.y - 1) / blockSize.y);
-
+        dim3 tileGrid((sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
+        //printf("Launching with %d x tiles and %d y tiles\n", (sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
         joshCudaKernel<<<tileGrid, blockSize>>>(
             sim.A_d, sim.n, sim.m, sim.G_d,
             num_bins, r_max / num_bins,
@@ -151,6 +226,8 @@ void launchJoshKernel(void) {
         );
     }
 }
+
+
 
 // Main logic
 int main(int argc, char **argv)
@@ -218,7 +295,6 @@ int main(int argc, char **argv)
 
     cudaMemcpy(A_d, A_h, 3 * n * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(B_d, B_h, 3 * m * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(G_d, G_h, num_bins * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Box_d, Box_h, 3 * sizeof(float), cudaMemcpyHostToDevice);
 
     stopTime(&timer);
@@ -242,7 +318,9 @@ int main(int argc, char **argv)
     // --- Run all kernels
     runKernel("Original CUDA kernel", launchCudaKernel, G_h, G_d, G_reference, num_bins);
     runKernel("Local SM kernel",  launchLocalSMKernel, G_h, G_d, G_reference, num_bins);
-    runKernel("Tiled kernel",  launchJoshKernel, G_h, G_d, G_reference, num_bins);
+    runKernel("Constant kernel",  launchJoshKernel, G_h, G_d, G_reference, num_bins);
+    runKernel("Constant and tiled tuned kernel",  launchTunedTiledJoshKernel, G_h, G_d, G_reference, num_bins);
+    runKernel("Constant and tiled kernel",  launchTiledJoshKernel, G_h, G_d, G_reference, num_bins);
 	runKernel("Tiled Local SM kernel",  launchTiledLocalSMKernel, G_h, G_d, G_reference, num_bins);
 
     // --- Cleanup

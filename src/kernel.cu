@@ -130,13 +130,91 @@ __global__ void localSMKernel(
 /* Constant memory holds one tile of B (up to BLOCK_SIZE atoms, 3 coords each) */
 __constant__ float B_C[65536 / sizeof(float)];
 
+__global__ void tunedTiledJoshCudaKernel(
+    float *A, int n, int m,
+    float *g_r, int num_bins, float bin_width,
+    float box_x, float box_y, float box_z, int tile_y, int iterations, int number_of_tiles_y) {
+
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col_in_tile = (blockIdx.y * blockDim.y * iterations) + threadIdx.y;
+    int col = tile_y * (170 * blockDim.y) + col_in_tile;
+
+    if (row >= n || col >= m || col > row)
+        return;
+
+    float Ax = A[3*row + 0];
+    float Ay = A[3*row + 1];
+    float Az = A[3*row + 2];
+
+    for (int i = 0; i < iterations; i++) {
+        if ((col + 32 * i >= m) || (col + 32 * i > row))
+            return;
+        float dx = fabsf(Ax - B_C[3*(col_in_tile + 32 * i) + 0]);
+        float dy = fabsf(Ay - B_C[3*(col_in_tile + 32 * i) + 1]);
+        float dz = fabsf(Az - B_C[3*(col_in_tile + 32 * i) + 2]);
+
+        // Apply minimum image convention
+        if (dx > 0.5f * box_x) dx = box_x - dx;
+        if (dy > 0.5f * box_y) dy = box_y - dy;
+        if (dz > 0.5f * box_z) dz = box_z - dz;
+
+        float r = sqrtf(dx*dx + dy*dy + dz*dz);
+
+        int bin = (int)floorf(r / bin_width + EPS);
+
+        // if (tile_y != 0) printf("Row %d Col %d bin = %d\n", row, col_in_tile + 32 * i, bin);
+
+        if (bin > 0 && bin < num_bins)
+            atomicAdd(&g_r[bin], 2.0f);
+    }
+}
+
+__global__ void tiledJoshCudaKernel(
+    float *A, int n, int m,
+    float *g_r, int num_bins, float bin_width,
+    float box_x, float box_y, float box_z, int tile_y, int number_of_tiles_y) {
+
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col_in_tile = threadIdx.y;
+    int col = tile_y * (170 * blockDim.y) + col_in_tile;
+
+    if (row >= n || col >= m || col > row)
+        return;
+
+    float Ax = A[3*row + 0];
+    float Ay = A[3*row + 1];
+    float Az = A[3*row + 2];
+
+    for (int i = 0; i < number_of_tiles_y; i++) {
+        if ((col + 32 * i >= m) || (col + 32 * i > row))
+            return;
+        float dx = fabsf(Ax - B_C[3*(col_in_tile + 32 * i) + 0]);
+        float dy = fabsf(Ay - B_C[3*(col_in_tile + 32 * i) + 1]);
+        float dz = fabsf(Az - B_C[3*(col_in_tile + 32 * i) + 2]);
+
+        // Apply minimum image convention
+        if (dx > 0.5f * box_x) dx = box_x - dx;
+        if (dy > 0.5f * box_y) dy = box_y - dy;
+        if (dz > 0.5f * box_z) dz = box_z - dz;
+
+        float r = sqrtf(dx*dx + dy*dy + dz*dz);
+
+        int bin = (int)floorf(r / bin_width + EPS);
+
+        // if (tile_y != 0) printf("Row %d Col %d bin = %d\n", row, col_in_tile + 32 * i, bin);
+
+        if (bin > 0 && bin < num_bins)
+            atomicAdd(&g_r[bin], 2.0f);
+    }
+}
+
 __global__ void joshCudaKernel(
     float *A, int n, int m,
     float *g_r, int num_bins, float bin_width,
     float box_x, float box_y, float box_z, int tile_y) {
 
     int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col_in_tile = blockDim.y * blockIdx.y + threadIdx.y;
+    int col_in_tile = blockIdx.y * blockDim.y + threadIdx.y;
     int col = tile_y * (170 * blockDim.y) + col_in_tile;
 
     if (row >= n || col >= m || col > row)
@@ -156,6 +234,8 @@ __global__ void joshCudaKernel(
     float r = sqrtf(dx*dx + dy*dy + dz*dz);
 
     int bin = (int)floorf(r / bin_width + EPS);
+
+    //if (tile_y != 0) printf("Row %d Col %d bin = %d\n", row, col_in_tile, bin);
 
     if (bin > 0 && bin < num_bins)
         atomicAdd(&g_r[bin], 2.0f);
