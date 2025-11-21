@@ -489,7 +489,9 @@ int main(int argc, char **argv)
     runKernel("Constant kernel",  launchJoshKernel, G_h, G_d, G_reference, num_bins);
     runKernel("Constant and tiled tuned kernel",  launchTunedTiledJoshKernel, G_h, G_d, G_reference, num_bins);
     runKernel("Constant and tiled kernel",  launchTiledJoshKernel, G_h, G_d, G_reference, num_bins);
-    runMultiGPUKernel("Utilizing multiple GPU constant and tiled tuned kernel", launchMultiGPUTunedTiledJoshKernel, G_h, G_reference, num_bins, A_h); // On normal cuda server this is faster when size > 11000
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+    if (deviceCount > 1) runMultiGPUKernel("Utilizing multiple GPU constant and tiled tuned kernel", launchMultiGPUTunedTiledJoshKernel, G_h, G_reference, num_bins, A_h); // On normal cuda server this is faster when size > 11000
 
     // --- Cleanup
     free(A_h); free(B_h); free(G_h); free(G_reference);
