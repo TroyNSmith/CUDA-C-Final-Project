@@ -131,7 +131,7 @@ __global__ void localSMKernel(
 __constant__ float B_C[65536 / sizeof(float)];
 
 __global__ void tunedTiledJoshCudaKernel(
-    float *A, int n, int m,
+    float *A, int n, int m, int startPoint,
     float *g_r, int num_bins, float bin_width,
     float box_x, float box_y, float box_z, int tile_y, int iterations, int number_of_tiles_y) {
 
@@ -139,7 +139,7 @@ __global__ void tunedTiledJoshCudaKernel(
     int col_in_tile = (blockIdx.y * blockDim.y * iterations) + threadIdx.y;
     int col = tile_y * (170 * blockDim.y) + col_in_tile;
 
-    if (row >= n || col >= m || col > row)
+    if (row >= n || col >= m || col > row + startPoint)
         return;
 
     float Ax = A[3*row + 0];
@@ -147,7 +147,7 @@ __global__ void tunedTiledJoshCudaKernel(
     float Az = A[3*row + 2];
 
     for (int i = 0; i < iterations; i++) {
-        if ((col + 32 * i >= m) || (col + 32 * i > row))
+        if ((col + 32 * i >= m) || (col + 32 * i > row + startPoint))
             return;
         float dx = fabsf(Ax - B_C[3*(col_in_tile + 32 * i) + 0]);
         float dy = fabsf(Ay - B_C[3*(col_in_tile + 32 * i) + 1]);
@@ -162,7 +162,7 @@ __global__ void tunedTiledJoshCudaKernel(
 
         int bin = (int)floorf(r / bin_width + EPS);
 
-        // if (tile_y != 0) printf("Row %d Col %d bin = %d\n", row, col_in_tile + 32 * i, bin);
+        //printf("Row %d Col %d bin = %d, Acoords: (%f,%f,%f) Bcoords: (%f,%f,%f)\n", row + startPoint, col_in_tile + 32 * i, bin, Ax,Ay,Az,B_C[3*(col_in_tile + 32 * i) + 0],B_C[3*(col_in_tile + 32 * i) + 1],B_C[3*(col_in_tile + 32 * i) + 2]);
 
         if (bin > 0 && bin < num_bins)
             atomicAdd(&g_r[bin], 2.0f);
@@ -297,4 +297,24 @@ __global__ void tiledLocalSMKernel(
 }
 #endif
 
+// Row 0 Col 0 bin = 0, Acoords: (8.401877,3.943829,7.830992) Bcoords: (8.401877,3.943829,7.830992)
+// Row 1 Col 1 bin = 0, Acoords: (7.984400,9.116474,1.975514) Bcoords: (7.984400,9.116474,1.975514)
+// Row 1 Col 0 bin = 2550, Acoords: (7.984400,9.116474,1.975514) Bcoords: (8.401877,3.943829,7.830992)
+// Row 2 Col 1 bin = 1966, Acoords: (3.352227,7.682296,2.777747) Bcoords: (7.984400,9.116474,1.975514)
+// Row 2 Col 0 bin = 3173, Acoords: (3.352227,7.682296,2.777747) Bcoords: (8.401877,3.943829,7.830992)
+// Row 2 Col 2 bin = 0, Acoords: (3.352227,7.682296,2.777747) Bcoords: (3.352227,7.682296,2.777747)
+// Row 3 Col 0 bin = 1342, Acoords: (5.539700,4.773971,6.288709) Bcoords: (8.401877,3.943829,7.830992)
+// Row 3 Col 1 bin = 2636, Acoords: (5.539700,4.773971,6.288709) Bcoords: (7.984400,9.116474,1.975514)
+// Row 3 Col 2 bin = 2022, Acoords: (5.539700,4.773971,6.288709) Bcoords: (3.352227,7.682296,2.777747)
+// Row 3 Col 3 bin = 0, Acoords: (5.539700,4.773971,6.288709) Bcoords: (5.539700,4.773971,6.288709)
 
+// Row 3 Col 3 bin = 0, Acoords: (5.539700,4.773971,6.288709) Bcoords: (5.539700,4.773971,6.288709)
+// Row 2 Col 2 bin = 0, Acoords: (3.352227,7.682296,2.777747) Bcoords: (3.352227,7.682296,2.777747)
+// Row 3 Col 2 bin = 2022, Acoords: (5.539700,4.773971,6.288709) Bcoords: (3.352227,7.682296,2.777747)
+// Row 1 Col 1 bin = 0, Acoords: (7.984400,9.116474,1.975514) Bcoords: (7.984400,9.116474,1.975514)
+// Row 2 Col 1 bin = 1966, Acoords: (3.352227,7.682296,2.777747) Bcoords: (7.984400,9.116474,1.975514)
+// Row 3 Col 1 bin = 2636, Acoords: (5.539700,4.773971,6.288709) Bcoords: (7.984400,9.116474,1.975514)
+// Row 0 Col 0 bin = 0, Acoords: (8.401877,3.943829,7.830992) Bcoords: (8.401877,3.943829,7.830992)
+// Row 1 Col 0 bin = 2550, Acoords: (7.984400,9.116474,1.975514) Bcoords: (8.401877,3.943829,7.830992)
+// Row 2 Col 0 bin = 3173, Acoords: (3.352227,7.682296,2.777747) Bcoords: (8.401877,3.943829,7.830992)
+// Row 3 Col 0 bin = 1342, Acoords: (5.539700,4.773971,6.288709) Bcoords: (8.401877,3.943829,7.830992)
