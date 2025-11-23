@@ -235,7 +235,7 @@ void runMultiGPUKernel(const char *label, void (*launchFunc)(int, int, float*, f
 
 // Kernel launchers
 #define r_max      2.50
-#define num_bins   1000
+#define num_bins   512
 #define box_size   10.0
 #define BLOCK_SIZE 32
 
