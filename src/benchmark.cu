@@ -33,7 +33,7 @@ void verify(float *A, float *B, int n)
     printf("\nTEST PASSED\n\n");
 }
 
-#define RUN_COUNT 1
+#define RUN_COUNT 50
 
 // Kernel runner to make things less chaotic
 void runKernel(const char *label, void (*launchFunc)(void),
@@ -221,11 +221,16 @@ void runMultiGPUKernel(const char *label, void (*launchFunc)(int, int, float*, f
     printf("Verifying results...");
     fflush(stdout);
     verify(G_h, G_reference, num_bins);
-
+    free(inputSizeA);
+    free(G_i);
     for (int i = 0; i < deviceCount; i++) {
         cudaFree(A_dd[i]);
         cudaFree(G_dd[i]);
+        cudaStreamDestroy(s[i]);
     }
+    free(A_dd);
+    free(G_dd);
+    free(s);
 }
 
 // Kernel launchers
@@ -316,9 +321,7 @@ void launchTunedTiledJoshKernel(void) {
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     int atomsInConstantMemory = 170 * blockSize.y;
     int tilesY = (sim.m + atomsInConstantMemory - 1) / atomsInConstantMemory;
-    int number_of_tiles_y = 2;
-    //printf("TilesY: %d\n", tilesY);
-
+    int number_of_tiles_y = 5;
     for (int tile = 0; tile < tilesY; ++tile) {
         int colsInTile = (tile == tilesY - 1)
                              ? sim.m - tile * atomsInConstantMemory
@@ -330,7 +333,6 @@ void launchTunedTiledJoshKernel(void) {
             			   colsInTile * 3 * sizeof(float), 0, cudaMemcpyHostToDevice);
 
         dim3 tileGrid((sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
-        //printf("Launching with %d x tiles and %d y tiles\n", (sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
         tunedTiledJoshCudaKernel<<<tileGrid, blockSize>>>(
             sim.A_d, sim.n, sim.m, 0, sim.G_d,
             num_bins, r_max / num_bins,
@@ -383,7 +385,6 @@ void launchJoshKernel(void) {
             			   colsInTile * 3 * sizeof(float), 0, cudaMemcpyHostToDevice);
 
         dim3 tileGrid((sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
-        //printf("Launching with %d x tiles and %d y tiles\n", (sim.n + blockSize.x - 1) / blockSize.x, number_of_tiles_y);
         joshCudaKernel<<<tileGrid, blockSize>>>(
             sim.A_d, sim.n, sim.m, sim.G_d,
             num_bins, r_max / num_bins,

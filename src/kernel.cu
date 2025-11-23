@@ -201,8 +201,6 @@ __global__ void tiledJoshCudaKernel(
 
         int bin = (int)floorf(r / bin_width + EPS);
 
-        // if (tile_y != 0) printf("Row %d Col %d bin = %d\n", row, col_in_tile + 32 * i, bin);
-
         if (bin > 0 && bin < num_bins)
             atomicAdd(&g_r[bin], 2.0f);
     }
