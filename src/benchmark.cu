@@ -100,16 +100,14 @@ void runMultiGPUKernel(const char *label, void (*launchFunc)(int, int, float*, f
     cudaError_t cuda_ret;
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);
-
-    int inputSizeA[deviceCount];
+    int *inputSizeA = (int*) malloc(deviceCount * sizeof(int));
     for (int i = 0; i < deviceCount; i++) {
         inputSizeA[i] = sim.n / deviceCount;
         if (i == deviceCount - 1) inputSizeA[i] += sim.n % deviceCount;
     }
-    
-    float* G_dd[deviceCount];
-    float* A_dd[deviceCount];
-    cudaStream_t s[deviceCount];
+    float **G_dd = (float**) malloc(deviceCount * sizeof(float*));
+    float **A_dd = (float**) malloc(deviceCount * sizeof(float*));
+    cudaStream_t *s = (cudaStream_t*) malloc(deviceCount * sizeof(cudaStream_t));
     for (int i = 0; i < deviceCount; i++) {
         cudaSetDevice(i);
         cudaStreamCreate(&s[i]);
@@ -195,7 +193,7 @@ void runMultiGPUKernel(const char *label, void (*launchFunc)(int, int, float*, f
     printf("Copying results from device to host...");
     fflush(stdout);
     startTime(&timer);
-    float* G_i[deviceCount];
+    float **G_i = (float**) malloc(deviceCount * sizeof(float*));
     for (int i = 0; i < deviceCount; i++) {
         G_i[i] = (float*) malloc(num_bins * sizeof(float));
         cudaMemcpyAsync(G_i[i], G_dd[i], num_bins * sizeof(float), cudaMemcpyDeviceToHost, s[i]);
@@ -471,7 +469,7 @@ int main(int argc, char **argv)
     printf("\nLaunching naive kernel...");
     fflush(stdout);
     startTime(&timer);
-    //naiveKernel(A_h, n, B_h, m, G_h, num_bins, Box_h, r_max);
+    naiveKernel(A_h, n, B_h, m, G_h, num_bins, Box_h, r_max);
     stopTime(&timer);
     printf(" %f s\n", elapsedTime(timer));
 
